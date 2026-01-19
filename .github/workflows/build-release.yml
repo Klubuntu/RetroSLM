@@ -53,12 +53,12 @@ jobs:
           python-version: '3.x'
 
       - name: Install and Configure Conan
+        shell: bash
         run: |
           pip install conan
           conan profile detect --force
-          # WYMUSZENIE C++17 WSZĘDZIE
-          conan profile build --f "settings.compiler.cppstd=17" default
-          conan profile host --f "settings.compiler.cppstd=17" default
+          # Poprawna składnia Conan 2.x do aktualizacji profilu:
+          conan profile update settings.compiler.cppstd=17 default
 
       # --- KOMPILACJA WINDOWS ---
       - name: Build Windows
@@ -66,14 +66,14 @@ jobs:
         shell: cmd
         run: |
           :: Ustawienie architektury w profilu przed uruchomieniem Twojego skryptu
-          conan profile host --f "settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}" default
+          conan profile update settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} default
           call build-conan.cmd
 
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          conan profile host --f "settings.arch=${{ matrix.arch }}" default
+          conan profile update settings.arch=${{ matrix.arch }} default
           chmod +x build-conan.sh
           ./build-conan.sh
 
@@ -99,10 +99,10 @@ jobs:
             pip3 install conan
           run: |
             conan profile detect --force
-            conan profile build --f "settings.compiler.cppstd=17" default
-            conan profile host --f "settings.compiler.cppstd=17" default
+            # Wewnątrz kontenera również używamy nowej składni:
+            conan profile update settings.compiler.cppstd=17 default
             chmod +x build-conan.sh
-            # Używamy -j2, aby uniknąć Segfault na emulacji
+            # Ograniczenie wątków zapobiega segfaultom
             sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
             ./build-conan.sh
 
@@ -112,7 +112,6 @@ jobs:
         run: |
           DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
-          # Twoje skrypty wrzucają pliki do folderu 'output'
           if [ "${{ matrix.os }}" = "windows" ]; then
             TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
             cp output/RetroSLM.exe dist/${TARGET_NAME} || cp build/Release/RetroSLM.exe dist/${TARGET_NAME}
@@ -151,10 +150,8 @@ jobs:
           name: "Build: ${{ steps.datetime.outputs.now }}"
           body: |
             Automatyczny build RetroSLM.
-            Standard C++: 17
             Data: ${{ steps.datetime.outputs.now }}
           prerelease: true
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          

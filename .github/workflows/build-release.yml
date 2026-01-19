@@ -52,38 +52,37 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install Conan
+      - name: Install and Configure Conan
         run: |
           pip install conan
           conan profile detect --force
+          # WYMUSZENIE C++17 WSZĘDZIE
+          conan profile build --f "settings.compiler.cppstd=17" default
+          conan profile host --f "settings.compiler.cppstd=17" default
 
-      # --- KOMPILACJA WINDOWS (Użycie Twojego skryptu) ---
+      # --- KOMPILACJA WINDOWS ---
       - name: Build Windows
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          :: Ustawiamy standard C++17 w domyślnym profilu przed uruchomieniem skryptu
-          conan profile build --f "settings.compiler.cppstd=17" default
-          conan profile build --f "settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}" default
+          :: Ustawienie architektury w profilu przed uruchomieniem Twojego skryptu
+          conan profile host --f "settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}" default
           call build-conan.cmd
 
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          conan install . -s arch=${{ matrix.arch }} -s compiler.cppstd=17 --build=missing --output-folder=conan_out
-          TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          conan profile host --f "settings.arch=${{ matrix.arch }}" default
+          chmod +x build-conan.sh
+          ./build-conan.sh
 
       # --- KOMPILACJA LINUX (x86_64) ---
       - name: Build Linux Standard
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         run: |
-          conan install . -s compiler.cppstd=17 --build=missing --output-folder=conan_out
-          TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          chmod +x build-conan.sh
+          ./build-conan.sh
 
       # --- KOMPILACJA LINUX (i386, ARM) ---
       - name: Build Linux Cross-Arch
@@ -100,10 +99,12 @@ jobs:
             pip3 install conan
           run: |
             conan profile detect --force
-            conan install . -s compiler.cppstd=17 --build=missing --output-folder=conan_out
-            TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
-            cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
-            cmake --build build -- -j2
+            conan profile build --f "settings.compiler.cppstd=17" default
+            conan profile host --f "settings.compiler.cppstd=17" default
+            chmod +x build-conan.sh
+            # Używamy -j2, aby uniknąć Segfault na emulacji
+            sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
+            ./build-conan.sh
 
       # --- PAKOWANIE ---
       - name: Package Artifacts
@@ -111,13 +112,12 @@ jobs:
         run: |
           DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
+          # Twoje skrypty wrzucają pliki do folderu 'output'
           if [ "${{ matrix.os }}" = "windows" ]; then
             TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
-            # Skrypt build-conan.cmd wrzuca pliki do folderu output/
             cp output/RetroSLM.exe dist/${TARGET_NAME} || cp build/Release/RetroSLM.exe dist/${TARGET_NAME}
           else
             TARGET_NAME="RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}"
-            # Sprawdzamy folder output (ze skryptów) oraz build (z cmake)
             cp output/RetroSLM dist/${TARGET_NAME} || cp build/RetroSLM dist/${TARGET_NAME}
           fi
 
@@ -149,7 +149,10 @@ jobs:
         with:
           tag_name: nightly-${{ github.run_number }}
           name: "Build: ${{ steps.datetime.outputs.now }}"
-          body: "Automatyczny build RetroSLM."
+          body: |
+            Automatyczny build RetroSLM.
+            Standard C++: 17
+            Data: ${{ steps.datetime.outputs.now }}
           prerelease: true
           files: ./release-files/*
         env:

@@ -21,7 +21,6 @@ cmake --preset conan-release \
     -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=output
 
 echo "=== Buduje projekt ==="
-cd build
-cmake --build --preset conan-release
+cmake --build build/Release
 
-echo "=== Zakończono budowę sukcesem ==="
+echo "=== Budowa zakończona sukcesem ==="

@@ -67,6 +67,8 @@ jobs:
           echo compiler.runtime_type=Release
           echo build_type=Release
           ) > "%USERPROFILE%\.conan2\profiles\default"
+          :: Naprawa skryptu: dodajemy --build=missing do conan install
+          powershell -Command "(gc build-conan.cmd) -replace 'conan install', 'conan install . --build=missing' | Out-File -encoding ASCII build-conan.cmd"
           call build-conan.cmd
 
       # --- MACOS ---
@@ -84,6 +86,8 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
+          # Naprawa skryptu: dodajemy --build=missing
+          sed -i '' 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
           ./build-conan.sh
 
@@ -102,6 +106,7 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
+          sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
           ./build-conan.sh
 
@@ -130,9 +135,10 @@ jobs:
             compiler.cppstd=gnu17
             build_type=Release
             EOF
-            chmod +x build-conan.sh
-            # Zapobieganie Segfaultom:
+            # Naprawa skryptu i optymalizacja wątków (j2)
+            sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
             sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
+            chmod +x build-conan.sh
             ./build-conan.sh
 
       # --- PAKOWANIE ---
@@ -173,4 +179,3 @@ jobs:
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          

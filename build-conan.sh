@@ -15,7 +15,7 @@ echo "=== Uruchamiam instalacje: conan ==="
 conan install
 
 echo "=== Konfiguruje CMake ==="
-cmake --preset conan-default \
+cmake --preset conan-release \
     -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=../output \
     -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=../output \
     -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=../output

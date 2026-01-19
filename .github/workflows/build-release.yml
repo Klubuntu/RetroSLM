@@ -1,6 +1,6 @@
 name: Build and Release RetroSLM
 
-on: 
+on:
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -11,13 +11,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix: 
+      matrix:
         include:
           - os: windows
             arch: x64
             runner: windows-latest
           - os: windows
-            arch:  x86
+            arch: x86
             runner: windows-latest
           - os: macos
             arch: armv8
@@ -30,17 +30,17 @@ jobs:
             runner: ubuntu-latest
           - os: linux
             arch: i386
-            runner:  ubuntu-latest
-          - os:  linux
+            runner: ubuntu-latest
+          - os: linux
             arch: aarch64
             runner: ubuntu-latest
           - os: linux
-            arch:  armv7
+            arch: armv7
             runner: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses:  actions/checkout@v4
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          if not exist "%USERPROFILE%\. conan2\profiles" mkdir "%USERPROFILE%\. conan2\profiles"
+          if not exist "%USERPROFILE%\.conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
           (
           echo [settings]
           echo os=Windows
@@ -66,15 +66,16 @@ jobs:
           echo compiler.runtime=dynamic
           echo compiler.runtime_type=Release
           echo build_type=Release
-          ) > "%USERPROFILE%\. conan2\profiles\default"
-          powershell -Command "(gc build-conan. cmd) -replace 'conan install', 'conan install .  --build=missing' | Out-File -encoding ASCII build-conan.cmd"
+          ) > "%USERPROFILE%\.conan2\profiles\default"
+          :: Naprawa skryptu: dodajemy --build=missing do conan install
+          powershell -Command "(gc build-conan.cmd) -replace 'conan install', 'conan install . --build=missing' | Out-File -encoding ASCII build-conan.cmd"
           call build-conan.cmd
 
       # --- MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          mkdir -p ~/. conan2/profiles
+          mkdir -p ~/.conan2/profiles
           cat <<EOF > ~/.conan2/profiles/default
           [settings]
           os=Macos
@@ -85,9 +86,10 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
+          # Naprawa skryptu: dodajemy --build=missing
           sed -i '' 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
-          ./build-conan. sh
+          ./build-conan.sh
 
       # --- LINUX STANDARD (x86_64) ---
       - name: Build Linux Standard
@@ -99,7 +101,7 @@ jobs:
           os=Linux
           arch=x86_64
           compiler=gcc
-          compiler. version=11
+          compiler.version=11
           compiler.libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
@@ -265,14 +267,14 @@ jobs:
           # Verify binary architecture
           find . -name "RetroSLM" -exec file {} \;
 
+          
+
       # --- PAKOWANIE ---
       - name: Package Artifacts
         shell: bash
         run: |
           DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
-          
-          # Find and package binary
           if [ "${{ matrix.os }}" = "windows" ]; then
             if [ -f output/Release/RetroSLM.exe ]; then
               cp output/Release/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
@@ -297,30 +299,27 @@ jobs:
           name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*
 
-  release: 
+  release:
     needs: build
     runs-on: ubuntu-latest
-    if:  success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-        with: 
+        with:
           path: ./release-files
           merge-multiple: true
-      
       - name: Remove empty build markers
         run: |
           find ./release-files -name ". empty_build_*" -delete || true
           ls -lah ./release-files/
-      
-      - id:  datetime
+      - id: datetime
         run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
-      
       - uses: softprops/action-gh-release@v2
-        with: 
+        with:
           tag_name: nightly-${{ github.run_number }}
-          name: "Build:  ${{ steps.datetime.outputs. now }}"
+          name: "Build: ${{ steps.datetime.outputs.now }}"
           files: ./release-files/*
-        env: 
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

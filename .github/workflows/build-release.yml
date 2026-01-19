@@ -1,0 +1,154 @@
+name: Build and Release RetroSLM
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Codziennie o północy, jeśli były zmiany
+  workflow_dispatch:      # Możliwość ręcznego uruchomienia
+
+jobs:
+  build:
+    name: ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - os: windows
+            arch: x64
+            runner: windows-latest
+          - os: windows
+            arch: x86
+            runner: windows-latest
+          
+          # macOS
+          - os: macos
+            arch: arm64
+            runner: macos-latest
+          - os: macos
+            arch: x86_64
+            runner: macos-13
+
+          # Linux
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: linux
+            arch: i686
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+          - os: linux
+            arch: armhf
+            runner: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Conan
+        run: |
+          pip install conan
+          conan profile detect --force
+
+      # --- KOMPILACJA WINDOWS (MSVC) ---
+      - name: Build Windows
+        if: matrix.os == 'windows'
+        shell: cmd
+        run: |
+          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} --build=missing --output-folder=build
+          cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+          cmake --build build --config Release
+        # [span_1](start_span)Wykorzystuje logikę czyszczenia i struktury z build-conan.cmd[span_1](end_span)
+
+      # --- KOMPILACJA MACOS ---
+      - name: Build macOS
+        if: matrix.os == 'macos'
+        run: |
+          conan install . -s arch=${{ matrix.arch }} --build=missing --output-folder=build
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      # --- KOMPILACJA LINUX (x86_64) ---
+      - name: Build Linux Standard
+        if: matrix.os == 'linux' && matrix.arch == 'x86_64'
+        run: |
+          conan install . --build=missing --output-folder=build
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      # --- KOMPILACJA LINUX (i686 / ARM via QEMU) ---
+      - name: Build Linux Cross-Arch
+        if: matrix.os == 'linux' && matrix.arch != 'x86_64'
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: ${{ matrix.arch == 'i686' && 'i386' || matrix.arch }}
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update
+            apt-get install -y build-essential cmake python3-pip
+            pip3 install conan
+          run: |
+            conan profile detect --force
+            conan install . --build=missing --output-folder=build
+            cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+            cmake --build build
+
+      # --- PAKOWANIE ARTEFAKTÓW Z DATĄ ---
+      - name: Package Artifacts
+        shell: bash
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
+            # [span_2](start_span)[span_3](start_span)Sprawdzenie różnych możliwych ścieżek wyjściowych[span_2](end_span)[span_3](end_span)
+            cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}
+          else
+            TARGET_NAME="RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}"
+            cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-files
+          merge-multiple: true
+
+      - name: Get current datetime
+        id: datetime
+        run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_number }}
+          name: "Build: ${{ steps.datetime.outputs.now }}"
+          body: |
+            Automatyczny build RetroSLM.
+            Data kompilacji: ${{ steps.datetime.outputs.now }}
+          prerelease: true
+          files: ./release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          

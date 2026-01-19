@@ -52,28 +52,30 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install and Configure Conan
-        shell: bash
-        run: |
-          pip install conan
-          conan profile detect --force
-          # Poprawna składnia Conan 2.x do aktualizacji profilu:
-          conan profile update settings.compiler.cppstd=17 default
+      - name: Install Conan
+        run: pip install conan
 
       # --- KOMPILACJA WINDOWS ---
       - name: Build Windows
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          :: Ustawienie architektury w profilu przed uruchomieniem Twojego skryptu
-          conan profile update settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} default
+          conan profile detect --force
+          :: Ręczne dopisanie standardu i architektury do pliku profilu
+          echo compiler.cppstd=17 >> %USERPROFILE%\.conan2\profiles\default
+          echo arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} > %USERPROFILE%\.conan2\profiles\default_temp
+          :: Łączymy wykryty profil z naszymi poprawkami
+          type %USERPROFILE%\.conan2\profiles\default >> %USERPROFILE%\.conan2\profiles\default_temp
+          move /y %USERPROFILE%\.conan2\profiles\default_temp %USERPROFILE%\.conan2\profiles\default
           call build-conan.cmd
 
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          conan profile update settings.arch=${{ matrix.arch }} default
+          conan profile detect --force
+          echo "compiler.cppstd=17" >> ~/.conan2/profiles/default
+          sed -i '' 's/arch=.*/arch=${{ matrix.arch }}/' ~/.conan2/profiles/default
           chmod +x build-conan.sh
           ./build-conan.sh
 
@@ -81,6 +83,8 @@ jobs:
       - name: Build Linux Standard
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         run: |
+          conan profile detect --force
+          echo "compiler.cppstd=17" >> ~/.conan2/profiles/default
           chmod +x build-conan.sh
           ./build-conan.sh
 
@@ -99,10 +103,9 @@ jobs:
             pip3 install conan
           run: |
             conan profile detect --force
-            # Wewnątrz kontenera również używamy nowej składni:
-            conan profile update settings.compiler.cppstd=17 default
+            echo "compiler.cppstd=17" >> /root/.conan2/profiles/default
             chmod +x build-conan.sh
-            # Ograniczenie wątków zapobiega segfaultom
+            # Poprawka dla emulacji (Segfault przy zbyt wielu wątkach)
             sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
             ./build-conan.sh
 
@@ -148,10 +151,9 @@ jobs:
         with:
           tag_name: nightly-${{ github.run_number }}
           name: "Build: ${{ steps.datetime.outputs.now }}"
-          body: |
-            Automatyczny build RetroSLM.
-            Data: ${{ steps.datetime.outputs.now }}
+          body: "Automatyczny build RetroSLM (C++17)."
           prerelease: true
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          

@@ -2,8 +2,8 @@ name: Build and Release RetroSLM
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Codziennie o północy, jeśli były zmiany
-  workflow_dispatch:      # Możliwość ręcznego uruchomienia
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -21,26 +21,26 @@ jobs:
             arch: x86
             runner: windows-latest
           
-          # macOS
+          # macOS - Używamy macos-15 dla Apple Silicon i macos-13 dla Intela
           - os: macos
             arch: arm64
-            runner: macos-latest
+            runner: macos-15
           - os: macos
             arch: x86_64
-            runner: macos-13
+            runner: macos-13 # macos-14/15 to tylko ARM, Intel wymaga macos-13
 
-          # Linux
+          # Linux - Poprawione nazwy dla uraimo/run-on-arch-action
           - os: linux
             arch: x86_64
             runner: ubuntu-latest
           - os: linux
-            arch: i686
+            arch: i386
             runner: ubuntu-latest
           - os: linux
-            arch: arm64
+            arch: aarch64
             runner: ubuntu-latest
           - os: linux
-            arch: armhf
+            arch: armv7
             runner: ubuntu-latest
 
     steps:
@@ -57,7 +57,7 @@ jobs:
           pip install conan
           conan profile detect --force
 
-      # --- KOMPILACJA WINDOWS (MSVC) ---
+      # --- KOMPILACJA WINDOWS ---
       - name: Build Windows
         if: matrix.os == 'windows'
         shell: cmd
@@ -65,8 +65,8 @@ jobs:
           conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} --build=missing --output-folder=build
           cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
           cmake --build build --config Release
-        # [span_1](start_span)Wykorzystuje logikę czyszczenia i struktury z build-conan.cmd[span_1](end_span)
 
+          
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
@@ -83,12 +83,12 @@ jobs:
           cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      # --- KOMPILACJA LINUX (i686 / ARM via QEMU) ---
+      # --- KOMPILACJA LINUX (Pozostałe architektury) ---
       - name: Build Linux Cross-Arch
         if: matrix.os == 'linux' && matrix.arch != 'x86_64'
         uses: uraimo/run-on-arch-action@v2
         with:
-          arch: ${{ matrix.arch == 'i686' && 'i386' || matrix.arch }}
+          arch: ${{ matrix.arch }}
           distro: ubuntu22.04
           githubToken: ${{ github.token }}
           install: |
@@ -101,7 +101,7 @@ jobs:
             cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
             cmake --build build
 
-      # --- PAKOWANIE ARTEFAKTÓW Z DATĄ ---
+      # --- PAKOWANIE Z DATĄ ---
       - name: Package Artifacts
         shell: bash
         run: |
@@ -109,11 +109,10 @@ jobs:
           mkdir -p dist
           if [ "${{ matrix.os }}" = "windows" ]; then
             TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
-            # [span_2](start_span)[span_3](start_span)Sprawdzenie różnych możliwych ścieżek wyjściowych[span_2](end_span)[span_3](end_span)
-            cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}
+            [span_3](start_span)cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}[span_3](end_span)
           else
             TARGET_NAME="RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}"
-            cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}
+            [span_4](start_span)cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}[span_4](end_span)
           fi
 
       - name: Upload Artifacts
@@ -125,7 +124,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     permissions:
       contents: write
     steps:
@@ -144,11 +143,8 @@ jobs:
         with:
           tag_name: nightly-${{ github.run_number }}
           name: "Build: ${{ steps.datetime.outputs.now }}"
-          body: |
-            Automatyczny build RetroSLM.
-            Data kompilacji: ${{ steps.datetime.outputs.now }}
+          body: "Automatyczny build RetroSLM dla wszystkich wspieranych platform."
           prerelease: true
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          

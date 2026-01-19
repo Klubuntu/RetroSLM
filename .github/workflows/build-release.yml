@@ -1,9 +1,9 @@
 name: Build and Release RetroSLM
 
-on:
+on: 
   schedule:
     - cron: '0 0 * * *'
-  workflow_dispatch:
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
+      matrix: 
         include:
           - os: windows
             arch: x64
@@ -25,7 +25,7 @@ jobs:
           - os: macos
             arch: x86_64
             runner: macos-15
-          - os: linux
+          - os:  linux
             arch: x86_64
             runner: ubuntu-latest
           - os: linux
@@ -33,10 +33,10 @@ jobs:
             runner: ubuntu-latest
           - os: linux
             arch: aarch64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
           - os: linux
             arch: armv7
-            runner: ubuntu-latest
+            runner:  ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -44,7 +44,7 @@ jobs:
 
       - name: Setup Python
         uses: actions/setup-python@v5
-        with:
+        with: 
           python-version: '3.x'
 
       - name: Install Conan
@@ -55,7 +55,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          if not exist "%USERPROFILE%\.conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
+          if not exist "%USERPROFILE%\. conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
           (
           echo [settings]
           echo os=Windows
@@ -66,8 +66,7 @@ jobs:
           echo compiler.runtime=dynamic
           echo compiler.runtime_type=Release
           echo build_type=Release
-          ) > "%USERPROFILE%\.conan2\profiles\default"
-          :: Naprawa skryptu: dodajemy --build=missing do conan install
+          ) > "%USERPROFILE%\. conan2\profiles\default"
           powershell -Command "(gc build-conan.cmd) -replace 'conan install', 'conan install . --build=missing' | Out-File -encoding ASCII build-conan.cmd"
           call build-conan.cmd
 
@@ -75,7 +74,7 @@ jobs:
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          mkdir -p ~/.conan2/profiles
+          mkdir -p ~/. conan2/profiles
           cat <<EOF > ~/.conan2/profiles/default
           [settings]
           os=Macos
@@ -86,13 +85,12 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
-          # Naprawa skryptu: dodajemy --build=missing
           sed -i '' 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
-          ./build-conan.sh
+          ./build-conan. sh
 
       # --- LINUX STANDARD (x86_64) ---
-      - name: Build Linux Standard
+      - name: Build Linux x86_64
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         run: |
           mkdir -p ~/.conan2/profiles
@@ -102,313 +100,260 @@ jobs:
           arch=x86_64
           compiler=gcc
           compiler.version=11
-          compiler.libcxx=libstdc++11
+          compiler. libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
           EOF
           sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
           ./build-conan.sh
-          
-          # Verify binary
-          find . -type f -name "RetroSLM" -exec file {} \;
+
+      # --- LINUX ARM64 (aarch64) - Native build on ARM runner ---
+      - name: Build Linux ARM64 (aarch64)
+        if: matrix.os == 'linux' && matrix.arch == 'aarch64'
+        run:  |
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/default
+          [settings]
+          os=Linux
+          arch=armv8
+          compiler=gcc
+          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
+          EOF
+          sed -i 's/conan install/conan install .  --build=missing/g' build-conan.sh
+          chmod +x build-conan.sh
+          ./build-conan. sh
+
       # --- LINUX 32-BIT (i386) ---
       - name: Build Linux i386 (32-bit)
         if: matrix.os == 'linux' && matrix.arch == 'i386'
         continue-on-error: true
         run: |
-          set +e
-
-          # Clean previous builds
-          rm -rf build build-i386 CMakeCache.txt
-          
           # Install 32-bit cross-compilation tools
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+          sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386 lib32stdc++6
           
-          # Create Conan profile for i386
+          # Create Conan default profile for build machine
           mkdir -p ~/.conan2/profiles
+          conan profile detect --force
+          
+          # Create Conan profile for i386 host
           cat <<EOF > ~/.conan2/profiles/i386
           [settings]
           os=Linux
           arch=x86
-          compiler=gcc
-          compiler.version=$(gcc -dumpversion | cut -d.  -f1)
-          compiler. libcxx=libstdc++11
-          compiler.cppstd=gnu17
-          build_type=Release
-          
-          EOF
-          
-          # Create CMake toolchain file for i386
-          cat <<EOF > toolchain-i386.cmake
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR i686)
-          set(CMAKE_C_COMPILER gcc)
-          set(CMAKE_CXX_COMPILER g++)
-          set(CMAKE_C_FLAGS "-m32" CACHE STRING "" FORCE)
-          set(CMAKE_CXX_FLAGS "-m32" CACHE STRING "" FORCE)
-          set(CMAKE_EXE_LINKER_FLAGS "-m32" CACHE STRING "" FORCE)
-          set(CMAKE_SHARED_LINKER_FLAGS "-m32" CACHE STRING "" FORCE)
-          set(CMAKE_MODULE_LINKER_FLAGS "-m32" CACHE STRING "" FORCE)
-          EOF
-          
-          # Install dependencies with Conan
-          conan install . -pr:b=default -pr:h=i386 --build=missing --output-folder=build-i386 || exit 0
-          
-          # Build with CMake - NOT using presets
-          mkdir -p build-i386/cmake-build
-          cd build-i386/cmake-build
-          
-          cmake ../.. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=../../toolchain-i386.cmake \
-            -DCMAKE_PREFIX_PATH="$PWD/../" \
-            -DCMAKE_C_FLAGS="-m32" \
-            -DCMAKE_CXX_FLAGS="-m32" || exit 0
-          
-          cmake --build . --config Release -j$(nproc) || exit 0
-          
-          # Verify and find binary
-          echo "=== Searching for i386 binary ==="
-          find . -type f -name "RetroSLM" -o -name "retroslm" | while read binary; do
-            echo "Found: $binary"
-            file "$binary"
-            if file "$binary" | grep -q "80386\|i386\|32-bit.*Intel"; then
-              echo "Valid i386 binary found!"
-              mkdir -p ../../dist-i386
-              cp "$binary" ../../dist-i386/RetroSLM
-              chmod +x ../../dist-i386/RetroSLM
-            fi
-          done
-      # --- LINUX ARM64 (aarch64) ---
-      - name: Build Linux ARM64 (aarch64)
-        if: matrix.os == 'linux' && matrix.arch == 'aarch64'
-        continue-on-error: true
-        run:  |
-          set +e
-          
-          # Install ARM64 cross-compilation tools
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
-          
-          # Create Conan profile for aarch64
-          mkdir -p ~/.conan2/profiles
-          cat <<EOF > ~/.conan2/profiles/aarch64
-          [settings]
-          os=Linux
-          arch=armv8
-          compiler=gcc
-          compiler.version=$(gcc -dumpversion -dumpversion | cut -d. -f1)
-          compiler.libcxx=libstdc++11
-          compiler.cppstd=gnu17
-          build_type=Release
-          
-          EOF
-          
-          # Create CMake toolchain file for aarch64
-          cat <<EOF > toolchain-aarch64.cmake
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR aarch64)
-          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
-          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-          set(CMAKE_AR aarch64-linux-gnu-ar)
-          set(CMAKE_RANLIB aarch64-linux-gnu-ranlib)
-          set(CMAKE_STRIP aarch64-linux-gnu-strip)
-          set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-          EOF
-          
-          # Install dependencies with Conan
-          conan install . -pr:b=default -pr:h=aarch64 --build=missing --output-folder=build-aarch64 || exit 0
-          
-          # Build with CMake
-          mkdir -p build-aarch64/cmake-build
-          cd build-aarch64/cmake-build
-          
-          cmake ../..  \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake \
-            -DCMAKE_PREFIX_PATH="$PWD/../" || exit 0
-          
-          cmake --build . --config Release -j$(nproc) || exit 0
-          
-          # Verify and find binary
-          echo "=== Searching for aarch64 binary ==="
-          find . -type f -name "RetroSLM" -o -name "retroslm" | while read binary; do
-            echo "Found:  $binary"
-            file "$binary"
-            if file "$binary" | grep -q "aarch64\|ARM.*64-bit"; then
-              echo "Valid aarch64 binary found!"
-              mkdir -p ../../dist-aarch64
-              cp "$binary" ../../dist-aarch64/RetroSLM
-              chmod +x ../../dist-aarch64/RetroSLM
-            fi
-          done
-
-      # --- LINUX ARMv7 ---
-      - name: Build Linux ARMv7
-        if: matrix.os == 'linux' && matrix.arch == 'armv7'
-        continue-on-error: true
-        run: |
-          set +e
-
-          # Clean previous builds
-          rm -rf build build-armv7 CMakeCache.txt
-          
-          # Install ARMv7 cross-compilation tools
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
-          
-          # Create Conan profile for armv7
-          mkdir -p ~/.conan2/profiles
-          cat <<EOF > ~/.conan2/profiles/armv7
-          [settings]
-          os=Linux
-          arch=armv7hf
           compiler=gcc
           compiler.version=$(gcc -dumpversion | cut -d. -f1)
           compiler.libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
           
-          [conf]
-          tools.cmake.cmaketoolchain:user_toolchain=["$PWD/toolchain-armv7.cmake"]
+          [buildenv]
+          CFLAGS=-m32
+          CXXFLAGS=-m32
+          LDFLAGS=-m32
+          EOF
+          
+          # Create CMake toolchain file for i386
+          cat <<'TOOLCHAIN' > toolchain-i386.cmake
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR i686)
+          
+          set(CMAKE_C_COMPILER gcc)
+          set(CMAKE_CXX_COMPILER g++)
+          
+          set(CMAKE_C_FLAGS_INIT "-m32")
+          set(CMAKE_CXX_FLAGS_INIT "-m32")
+          set(CMAKE_EXE_LINKER_FLAGS_INIT "-m32")
+          set(CMAKE_SHARED_LINKER_FLAGS_INIT "-m32")
+          set(CMAKE_MODULE_LINKER_FLAGS_INIT "-m32")
+          
+          # Force 32-bit compilation
+          set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32" CACHE STRING "" FORCE)
+          set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32" CACHE STRING "" FORCE)
+          set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -m32" CACHE STRING "" FORCE)
+          TOOLCHAIN
+          
+          # Install dependencies with Conan
+          conan install . -pr:b=default -pr:h=i386 --build=missing --output-folder=build-i386
+          
+          # Build with CMake
+          cmake -S .  -B build-i386/Release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=toolchain-i386.cmake \
+            -DCMAKE_PREFIX_PATH="$(pwd)/build-i386"
+          
+          cmake --build build-i386/Release --config Release -j$(nproc)
+          
+          # Verify binary architecture
+          echo "=== Verifying i386 build ==="
+          find build-i386 -type f -name "RetroSLM" -exec file {} \; -exec sh -c 'file "$1" | grep -q "32-bit" && echo "✓ Valid 32-bit binary:  $1"' _ {} \;
+
+      # --- LINUX ARMv7 (cross-compile) ---
+      - name: Build Linux ARMv7
+        if: matrix.os == 'linux' && matrix.arch == 'armv7'
+        continue-on-error: true
+        run: |
+          # Install ARMv7 cross-compilation tools
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          
+          # Create Conan default profile for build machine
+          mkdir -p ~/.conan2/profiles
+          conan profile detect --force
+          
+          # Create Conan profile for armv7 host
+          cat <<EOF > ~/.conan2/profiles/armv7
+          [settings]
+          os=Linux
+          arch=armv7hf
+          compiler=gcc
+          compiler.version=$(arm-linux-gnueabihf-gcc -dumpversion | cut -d. -f1)
+          compiler.libcxx=libstdc++11
+          compiler. cppstd=gnu17
+          build_type=Release
+          
+          [buildenv]
+          CC=arm-linux-gnueabihf-gcc
+          CXX=arm-linux-gnueabihf-g++
+          AR=arm-linux-gnueabihf-ar
+          AS=arm-linux-gnueabihf-as
+          RANLIB=arm-linux-gnueabihf-ranlib
+          LD=arm-linux-gnueabihf-ld
+          STRIP=arm-linux-gnueabihf-strip
           EOF
           
           # Create CMake toolchain file for armv7
-          cat <<EOF > toolchain-armv7.cmake
+          cat <<'TOOLCHAIN' > toolchain-armv7.cmake
           set(CMAKE_SYSTEM_NAME Linux)
           set(CMAKE_SYSTEM_PROCESSOR armv7l)
+          
           set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
           set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
-          set(CMAKE_AR arm-linux-gnueabihf-ar)
-          set(CMAKE_RANLIB arm-linux-gnueabihf-ranlib)
-          set(CMAKE_STRIP arm-linux-gnueabihf-strip)
+          set(CMAKE_AR arm-linux-gnueabihf-ar CACHE FILEPATH "Archiver")
+          set(CMAKE_RANLIB arm-linux-gnueabihf-ranlib CACHE FILEPATH "Ranlib")
+          set(CMAKE_STRIP arm-linux-gnueabihf-strip CACHE FILEPATH "Strip")
+          
           set(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
           set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
           set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
           set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
           set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-          EOF
           
-          # Install dependencies with Conan
-          conan install . -pr:b=default -pr:h=armv7 --build=missing --output-folder=build-armv7 || exit 0
+          set(CMAKE_CROSSCOMPILING TRUE)
+          TOOLCHAIN
+          
+          # Install dependencies with Conan (cross-compile)
+          conan install . -pr:b=default -pr: h=armv7 --build=missing --output-folder=build-armv7
           
           # Build with CMake
-          mkdir -p build-armv7/cmake-build
-          cd build-armv7/cmake-build
-          
-          cmake ../.. \
+          cmake -S . -B build-armv7/Release \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=../../toolchain-armv7.cmake \
-            -DCMAKE_PREFIX_PATH="$PWD/../" || exit 0
+            -DCMAKE_TOOLCHAIN_FILE=toolchain-armv7.cmake \
+            -DCMAKE_PREFIX_PATH="$(pwd)/build-armv7"
           
-          cmake --build . --config Release -j$(nproc) || exit 0
+          cmake --build build-armv7/Release --config Release -j$(nproc)
           
-          # Verify and find binary
-          echo "=== Searching for armv7 binary ==="
-          find . -type f -name "RetroSLM" -o -name "retroslm" | while read binary; do
-            echo "Found:  $binary"
-            file "$binary"
-            if file "$binary" | grep -q "ARM.*32-bit"; then
-              echo "Valid armv7 binary found!"
-              mkdir -p ../../dist-armv7
-              cp "$binary" ../../dist-armv7/RetroSLM
-              chmod +x ../../dist-armv7/RetroSLM
-            fi
-          done
-
-          
+          # Verify binary architecture
+          echo "=== Verifying ARMv7 build ==="
+          find build-armv7 -type f -name "RetroSLM" -exec file {} \; -exec sh -c 'file "$1" | grep -q "ARM" && echo "✓ Valid ARM binary: $1"' _ {} \;
 
       # --- PAKOWANIE ---
       - name: Package Artifacts
         shell: bash
         run: |
-          DATE=$(date +'%Y. %m.%d')
+          DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
+          PACKAGED=false
+          
+          echo "=== Packaging for ${{ matrix.os }} ${{ matrix. arch }} ==="
           
           if [ "${{ matrix.os }}" = "windows" ]; then
-            if [ -f output/Release/RetroSLM.exe ]; then
-              cp output/Release/RetroSLM. exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
-              echo "✓ Packaged Windows binary"
+            BINARY="output/Release/RetroSLM.exe"
+            if [ -f "$BINARY" ]; then
+              cp "$BINARY" "dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
+              echo "✓ Packaged:  RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
+              PACKAGED=true
             fi
-          elif [ "${{ matrix. os }}" = "macos" ]; then
+            
+          elif [ "${{ matrix.os }}" = "macos" ]; then
             BINARY=$(find build -type f -name "RetroSLM" 2>/dev/null | head -n 1)
             if [ -n "$BINARY" ] && [ -f "$BINARY" ]; then
-              cp "$BINARY" dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
-              chmod +x dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix. arch }}
-              echo "✓ Packaged macOS binary"
-              file dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+              cp "$BINARY" "dist/RetroSLM_${DATE}_macos_${{ matrix.arch }}"
+              chmod +x "dist/RetroSLM_${DATE}_macos_${{ matrix.arch }}"
+              echo "✓ Packaged: RetroSLM_${DATE}_macos_${{ matrix.arch }}"
+              file "dist/RetroSLM_${DATE}_macos_${{ matrix.arch }}"
+              PACKAGED=true
             fi
+            
           elif [ "${{ matrix.os }}" = "linux" ]; then
+            # Set expected architecture pattern for validation
             case "${{ matrix.arch }}" in
               x86_64)
-                BINARY=$(find build -type f -name "RetroSLM" 2>/dev/null | head -n 1)
+                SEARCH_DIR="build"
+                EXPECTED_PATTERN="x86-64"
                 ;;
               i386)
-                BINARY=$(find dist-i386 -type f -name "RetroSLM" 2>/dev/null | head -n 1)
+                SEARCH_DIR="build-i386"
+                EXPECTED_PATTERN="80386\|Intel 80386\|i386\|32-bit.*Intel"
                 ;;
               aarch64)
-                BINARY=$(find dist-aarch64 -type f -name "RetroSLM" 2>/dev/null | head -n 1)
+                SEARCH_DIR="build"
+                EXPECTED_PATTERN="aarch64\|ARM aarch64"
                 ;;
               armv7)
-                BINARY=$(find dist-armv7 -type f -name "RetroSLM" 2>/dev/null | head -n 1)
+                SEARCH_DIR="build-armv7"
+                EXPECTED_PATTERN="ARM\|32-bit.*ARM"
                 ;;
             esac
             
-            if [ -n "$BINARY" ] && [ -f "$BINARY" ]; then
-              # Verify architecture before packaging
-              ARCH_CHECK=$(file "$BINARY")
-              echo "Binary check: $ARCH_CHECK"
+            echo "Searching in:  $SEARCH_DIR for pattern: $EXPECTED_PATTERN"
+            
+            # Find all RetroSLM binaries
+            while IFS= read -r -d '' BINARY; do
+              echo "Checking: $BINARY"
+              ARCH_INFO=$(file "$BINARY")
+              echo "  File info: $ARCH_INFO"
               
-              VALID=false
-              case "${{ matrix.arch }}" in
-                x86_64)
-                  echo "$ARCH_CHECK" | grep -q "x86-64.*64-bit" && VALID=true
-                  ;;
-                i386)
-                  echo "$ARCH_CHECK" | grep -q "80386\|i386\|Intel.*32-bit" && VALID=true
-                  ;;
-                aarch64)
-                  echo "$ARCH_CHECK" | grep -q "aarch64\|ARM.*64-bit" && VALID=true
-                  ;;
-                armv7)
-                  echo "$ARCH_CHECK" | grep -q "ARM.*32-bit" && VALID=true
-                  ;;
-              esac
-              
-              if [ "$VALID" = "true" ]; then
-                cp "$BINARY" dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
-                chmod +x dist/RetroSLM_${DATE}_${{ matrix. os }}_${{ matrix.arch }}
+              if echo "$ARCH_INFO" | grep -qE "$EXPECTED_PATTERN"; then
+                cp "$BINARY" "dist/RetroSLM_${DATE}_linux_${{ matrix.arch }}"
+                chmod +x "dist/RetroSLM_${DATE}_linux_${{ matrix.arch }}"
                 echo "✓ Packaged valid ${{ matrix.arch }} binary"
-                file dist/RetroSLM_${DATE}_${{ matrix. os }}_${{ matrix.arch }}
+                file "dist/RetroSLM_${DATE}_linux_${{ matrix.arch }}"
+                PACKAGED=true
+                break
               else
-                echo "✗ Binary architecture mismatch for ${{ matrix.arch }}"
-                echo "Expected: ${{ matrix.arch }}, Got: $ARCH_CHECK"
-                touch dist/. failed_${{ matrix.arch }}
+                echo "  ✗ Architecture mismatch, skipping"
               fi
-            else
-              echo "✗ No binary found for ${{ matrix.os }} ${{ matrix.arch }}"
-              touch dist/.empty_build_${{ matrix.arch }}
-            fi
+            done < <(find "$SEARCH_DIR" -type f -name "RetroSLM" -print0 2>/dev/null)
           fi
+          
+          if [ "$PACKAGED" = "false" ]; then
+            echo "✗ No valid binary found for ${{ matrix.os }} ${{ matrix.arch }}"
+            echo "Build may have failed or produced wrong architecture"
+            # Create marker file so artifact upload doesn't fail
+            echo "BUILD_FAILED" > "dist/. build_failed_${{ matrix.arch }}"
+          fi
+          
+          echo "=== Contents of dist/ ==="
+          ls -la dist/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
+          name:  RetroSLM-${{ matrix.os }}-${{ matrix. arch }}
           path: dist/*
+          if-no-files-found: ignore
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     permissions:
       contents: write
     steps:
@@ -416,20 +361,46 @@ jobs:
         with:
           path: ./release-files
           merge-multiple: true
-      - name: Remove build markers and show files
+      
+      - name:  Prepare release files
         run: |
-          find ./release-files -name ". empty_build_*" -delete || true
-          find ./release-files -name ". failed_*" -delete || true
+          # Remove failed build markers
+          find ./release-files -name ". build_failed_*" -delete 2>/dev/null || true
+          
           echo "=== Release files ==="
           ls -lah ./release-files/
-          find ./release-files -type f -exec file {} \;
+          
+          echo ""
+          echo "=== File architectures ==="
+          find ./release-files -type f !  -name ".*" -exec sh -c 'echo "{}: "; file "{}"' \;
+          
+          echo ""
+          echo "=== SHA256 checksums ==="
+          find ./release-files -type f !  -name ".*" -exec sha256sum {} \;
       
       - id: datetime
         run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
-      - uses: softprops/action-gh-release@v2
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly-${{ github.run_number }}
-          name: "Build: ${{ steps.datetime.outputs.now }}"
-          files: ./release-files/*
+          name: "Build:  ${{ steps.datetime.outputs.now }}"
+          files: ./release-files/RetroSLM_*
+          body: |
+            ## Nightly Build ${{ steps.datetime.outputs.now }}
+            
+            ### Available builds:
+            - Windows x64/x86
+            - macOS ARM64/x86_64
+            - Linux x86_64
+            - Linux i386 (32-bit) - if cross-compilation succeeded
+            - Linux aarch64 (ARM64) - native build
+            - Linux armv7 (ARM 32-bit) - if cross-compilation succeeded
+            
+            ### Verify architecture:
+            ```bash
+            file RetroSLM_*
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

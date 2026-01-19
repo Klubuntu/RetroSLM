@@ -1,0 +1,181 @@
+name: Build and Release RetroSLM
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            arch: x64
+            runner: windows-latest
+          - os: windows
+            arch: x86
+            runner: windows-latest
+          - os: macos
+            arch: armv8
+            runner: macos-15
+          - os: macos
+            arch: x86_64
+            runner: macos-15
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: linux
+            arch: i386
+            runner: ubuntu-latest
+          - os: linux
+            arch: aarch64
+            runner: ubuntu-latest
+          - os: linux
+            arch: armv7
+            runner: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Conan
+        run: pip install conan
+
+      # --- WINDOWS ---
+      - name: Build Windows
+        if: matrix.os == 'windows'
+        shell: cmd
+        run: |
+          if not exist "%USERPROFILE%\.conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
+          (
+          echo [settings]
+          echo os=Windows
+          echo arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}
+          echo compiler=msvc
+          echo compiler.version=193
+          echo compiler.cppstd=17
+          echo compiler.runtime=dynamic
+          echo compiler.runtime_type=Release
+          echo build_type=Release
+          ) > "%USERPROFILE%\.conan2\profiles\default"
+          :: Naprawa skryptu: dodajemy --build=missing do conan install
+          powershell -Command "(gc build-conan.cmd) -replace 'conan install', 'conan install . --build=missing' | Out-File -encoding ASCII build-conan.cmd"
+          call build-conan.cmd
+
+      # --- MACOS ---
+      - name: Build macOS
+        if: matrix.os == 'macos'
+        run: |
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/default
+          [settings]
+          os=Macos
+          arch=${{ matrix.arch }}
+          compiler=apple-clang
+          compiler.version=15
+          compiler.libcxx=libc++
+          compiler.cppstd=gnu17
+          build_type=Release
+          EOF
+          # Naprawa skryptu: dodajemy --build=missing
+          sed -i '' 's/conan install/conan install . --build=missing/g' build-conan.sh
+          chmod +x build-conan.sh
+          ./build-conan.sh
+
+      # --- LINUX STANDARD (x86_64) ---
+      - name: Build Linux Standard
+        if: matrix.os == 'linux' && matrix.arch == 'x86_64'
+        run: |
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/default
+          [settings]
+          os=Linux
+          arch=x86_64
+          compiler=gcc
+          compiler.version=11
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
+          EOF
+          sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
+          chmod +x build-conan.sh
+          ./build-conan.sh
+
+      # --- LINUX CROSS-ARCH (i386, ARM) ---
+      - name: Build Linux Cross-Arch
+        if: matrix.os == 'linux' && matrix.arch != 'x86_64'
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.arch == 'i386' && 'none' || 'ubuntu22.04' }}
+          base_image: ${{ matrix.arch == 'i386' && 'i386/ubuntu:bionic' || '' }}
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update
+            apt-get install -y build-essential cmake python3-pip make g++
+            pip3 install conan
+          run: |
+            mkdir -p /root/.conan2/profiles
+            cat <<EOF > /root/.conan2/profiles/default
+            [settings]
+            os=Linux
+            arch=${{ matrix.arch == 'aarch64' && 'armv8' || (matrix.arch == 'armv7' && 'armv7' || 'x86') }}
+            compiler=gcc
+            compiler.version=11
+            compiler.libcxx=libstdc++11
+            compiler.cppstd=gnu17
+            build_type=Release
+            EOF
+            # Naprawa skryptu i optymalizacja wątków (j2)
+            sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
+            sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
+            chmod +x build-conan.sh
+            ./build-conan.sh
+
+      # --- PAKOWANIE ---
+      - name: Package Artifacts
+        shell: bash
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            cp output/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
+          else
+            cp output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./release-files
+          merge-multiple: true
+      - id: datetime
+        run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_number }}
+          name: "Build: ${{ steps.datetime.outputs.now }}"
+          files: ./release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

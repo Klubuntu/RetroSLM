@@ -110,36 +110,37 @@ jobs:
           chmod +x build-conan.sh
           ./build-conan.sh
 
-      # --- LINUX CROSS-ARCH (i386, ARM) ---
-      - name: Build Linux Cross-Arch
-        if: matrix.os == 'linux' && matrix.arch != 'x86_64'
-        uses: uraimo/run-on-arch-action@v2
-        with:
-          arch: ${{ matrix.arch }}
-          distro: ${{ matrix.arch == 'i386' && 'none' || 'ubuntu22.04' }}
-          base_image: ${{ matrix.arch == 'i386' && 'i386/ubuntu:bionic' || '' }}
-          githubToken: ${{ github.token }}
-          install: |
-            apt-get update
-            apt-get install -y build-essential cmake python3-pip make g++
-            pip3 install conan
-          run: |
-            mkdir -p /root/.conan2/profiles
-            cat <<EOF > /root/.conan2/profiles/default
-            [settings]
-            os=Linux
-            arch=${{ matrix.arch == 'aarch64' && 'armv8' || (matrix.arch == 'armv7' && 'armv7' || 'x86') }}
-            compiler=gcc
-            compiler.version=11
-            compiler.libcxx=libstdc++11
-            compiler.cppstd=gnu17
-            build_type=Release
-            EOF
-            # Naprawa skryptu i optymalizacja wątków (j2)
-            sed -i 's/conan install/conan install . --build=missing/g' build-conan.sh
-            sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
-            chmod +x build-conan.sh
-            ./build-conan.sh
+      # --- LINUX 32-BIT (x86) COMPILE ON x86_64 HOST ---
+      - name: Build Linux x86 (32-bit)
+        if: matrix.os == 'linux' && matrix.arch == 'i386'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib libstdc++6:i386
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/x86
+          [settings]
+          os=Linux
+          arch=x86
+          compiler=gcc
+          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
+          EOF
+
+          Instalacja zależności przez Conan z użyciem nowego profilu
+          conan install . -pr:b=default -pr:h=x86 --build=missing --output-folder=build
+
+          Konfiguracja CMake z wymuszeniem flagi -m32
+          cmake --preset conan-release \
+            -DCMAKE_CXX_FLAGS="-m32" \
+            -DCMAKE_C_FLAGS="-m32" \
+            -DCMAKE_EXE_LINKER_FLAGS="-m32"
+
+          cmake --build --preset conan-release -- -j$(nproc)
+          find build -name "RetroSLM" -exec file {} \;
+          
 
       # --- PAKOWANIE ---
       - name: Package Artifacts

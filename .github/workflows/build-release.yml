@@ -175,8 +175,10 @@ jobs:
           # Build with CMake
           cmake -S .  -B build-i386/Release \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=toolchain-i386.cmake \
-            -DCMAKE_PREFIX_PATH="$(pwd)/build-i386"
+            -DCMAKE_TOOLCHAIN_FILE="$(pwd)/build-i386/conan_toolchain.cmake" \
+            -DCMAKE_C_FLAGS="-m32" \
+            -DCMAKE_CXX_FLAGS="-m32" \
+            -DCMAKE_EXE_LINKER_FLAGS="-m32"
           
           cmake --build build-i386/Release --config Release -j$(nproc)
           
@@ -291,7 +293,7 @@ jobs:
               echo "Found binary:  $BINARY"
               echo "Architecture: $ARCH_INFO"
               
-              if echo "$ARCH_INFO" | grep -qE "$EXPECTED_ARCH"; then
+              if echo "$ARCH_INFO" | grep -q "$EXPECTED_ARCH"; then
                 cp "$BINARY" dist/RetroSLM_${DATE}_linux_${{ matrix.arch }}
                 chmod +x dist/RetroSLM_${DATE}_linux_${{ matrix.arch }}
                 echo "✓ Packaged Linux ${{ matrix.arch }}"

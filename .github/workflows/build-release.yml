@@ -1,6 +1,6 @@
 name: Build and Release RetroSLM
 
-on:
+on: 
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -11,13 +11,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
+      matrix: 
         include:
           - os: windows
             arch: x64
             runner: windows-latest
           - os: windows
-            arch: x86
+            arch:  x86
             runner: windows-latest
           - os: macos
             arch: armv8
@@ -30,17 +30,17 @@ jobs:
             runner: ubuntu-latest
           - os: linux
             arch: i386
-            runner: ubuntu-latest
-          - os: linux
+            runner:  ubuntu-latest
+          - os:  linux
             arch: aarch64
             runner: ubuntu-latest
           - os: linux
-            arch: armv7
+            arch:  armv7
             runner: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses:  actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          if not exist "%USERPROFILE%\.conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
+          if not exist "%USERPROFILE%\. conan2\profiles" mkdir "%USERPROFILE%\. conan2\profiles"
           (
           echo [settings]
           echo os=Windows
@@ -66,16 +66,15 @@ jobs:
           echo compiler.runtime=dynamic
           echo compiler.runtime_type=Release
           echo build_type=Release
-          ) > "%USERPROFILE%\.conan2\profiles\default"
-          :: Naprawa skryptu: dodajemy --build=missing do conan install
-          powershell -Command "(gc build-conan.cmd) -replace 'conan install', 'conan install . --build=missing' | Out-File -encoding ASCII build-conan.cmd"
+          ) > "%USERPROFILE%\. conan2\profiles\default"
+          powershell -Command "(gc build-conan. cmd) -replace 'conan install', 'conan install .  --build=missing' | Out-File -encoding ASCII build-conan.cmd"
           call build-conan.cmd
 
       # --- MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          mkdir -p ~/.conan2/profiles
+          mkdir -p ~/. conan2/profiles
           cat <<EOF > ~/.conan2/profiles/default
           [settings]
           os=Macos
@@ -86,10 +85,9 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
-          # Naprawa skryptu: dodajemy --build=missing
           sed -i '' 's/conan install/conan install . --build=missing/g' build-conan.sh
           chmod +x build-conan.sh
-          ./build-conan.sh
+          ./build-conan. sh
 
       # --- LINUX STANDARD (x86_64) ---
       - name: Build Linux Standard
@@ -101,7 +99,7 @@ jobs:
           os=Linux
           arch=x86_64
           compiler=gcc
-          compiler.version=11
+          compiler. version=11
           compiler.libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
@@ -110,126 +108,162 @@ jobs:
           chmod +x build-conan.sh
           ./build-conan.sh
 
-      # --- LINUX 32-BIT (x86) COMPILE ON x86_64 HOST ---
-      - name: Build Linux x86 (32-bit)
+      # --- LINUX 32-BIT (i386) ---
+      - name: Build Linux i386 (32-bit)
         if: matrix.os == 'linux' && matrix.arch == 'i386'
+        continue-on-error: true
         run: |
+          set +e
+          
+          # Install 32-bit cross-compilation tools
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libstdc++6:i386
+          sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+          
+          # Create Conan profile for i386
           mkdir -p ~/.conan2/profiles
-          cat <<EOF > ~/.conan2/profiles/x86
+          cat <<EOF > ~/.conan2/profiles/i386
           [settings]
           os=Linux
           arch=x86
           compiler=gcc
-          compiler.version=$(gcc -dumpversion | cut -d. -f1)
-          compiler.libcxx=libstdc++11
+          compiler.version=$(gcc -dumpversion | cut -d.  -f1)
+          compiler. libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
+          
+          [conf]
+          tools. cmake.cmaketoolchain:user_toolchain=["$PWD/toolchain-i386.cmake"]
           EOF
           
-          conan install . -pr:b=default -pr:h=x86 --build=missing --output-folder=build
-
-          Konfiguracja CMake z wymuszeniem flagi -m32
-          cmake --preset conan-release \
-            -DCMAKE_CXX_FLAGS="-m32" \
+          # Create CMake toolchain file for i386
+          cat <<EOF > toolchain-i386.cmake
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR i686)
+          set(CMAKE_C_FLAGS "\${CMAKE_C_FLAGS} -m32" CACHE STRING "" FORCE)
+          set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -m32" CACHE STRING "" FORCE)
+          set(CMAKE_EXE_LINKER_FLAGS "\${CMAKE_EXE_LINKER_FLAGS} -m32" CACHE STRING "" FORCE)
+          set(CMAKE_SHARED_LINKER_FLAGS "\${CMAKE_SHARED_LINKER_FLAGS} -m32" CACHE STRING "" FORCE)
+          EOF
+          
+          # Install dependencies with Conan
+          conan install . -pr:b=default -pr:h=i386 --build=missing --output-folder=build
+          
+          # Build with CMake
+          cd build
+          cmake ..  -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain. cmake \
             -DCMAKE_C_FLAGS="-m32" \
+            -DCMAKE_CXX_FLAGS="-m32" \
             -DCMAKE_EXE_LINKER_FLAGS="-m32"
+          cmake --build . --config Release -j$(nproc)
+          
+          # Verify binary architecture
+          find .  -name "RetroSLM" -exec file {} \;
 
-          cmake --build --preset conan-release -- -j$(nproc)
-          find build -name "RetroSLM" -exec file {} \;
-
-      # --- LINUX ARM64 (aarch64) CROSS-COMPILE ---
+      # --- LINUX ARM64 (aarch64) ---
       - name: Build Linux ARM64 (aarch64)
         if: matrix.os == 'linux' && matrix.arch == 'aarch64'
         continue-on-error: true
-        run: |
+        run:  |
+          set +e
+          
+          # Install ARM64 cross-compilation tools
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
           
+          # Create Conan profile for aarch64
           mkdir -p ~/.conan2/profiles
           cat <<EOF > ~/.conan2/profiles/aarch64
           [settings]
           os=Linux
           arch=armv8
           compiler=gcc
-          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.version=$(aarch64-linux-gnu-gcc -dumpversion | cut -d. -f1)
           compiler.libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
           
-          [buildenv]
-          CC=aarch64-linux-gnu-gcc
-          CXX=aarch64-linux-gnu-g++
-          AR=aarch64-linux-gnu-ar
-          AS=aarch64-linux-gnu-as
-          RANLIB=aarch64-linux-gnu-ranlib
-          LD=aarch64-linux-gnu-ld
-          STRIP=aarch64-linux-gnu-strip
+          [conf]
+          tools.cmake.cmaketoolchain:user_toolchain=["$PWD/toolchain-aarch64.cmake"]
           EOF
           
-          conan install . -pr:b=default -pr:h=aarch64 --build=missing --output-folder=build || exit 0
+          # Create CMake toolchain file for aarch64
+          cat <<EOF > toolchain-aarch64.cmake
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+          EOF
           
-          # Konfiguracja CMake z cross-compilation toolchain
-          cmake --preset conan-release \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY || exit 0
+          # Install dependencies with Conan
+          conan install . -pr:b=default -pr:h=aarch64 --build=missing --output-folder=build
+          
+          # Build with CMake
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake
+          cmake --build . --config Release -j$(nproc)
+          
+          # Verify binary architecture
+          find . -name "RetroSLM" -exec file {} \;
 
-          cmake --build --preset conan-release -- -j$(nproc) || exit 0
-          find build -name "RetroSLM" -exec file {} \; || exit 0
-
-      # --- LINUX ARMv7 CROSS-COMPILE ---
+      # --- LINUX ARMv7 ---
       - name: Build Linux ARMv7
         if: matrix.os == 'linux' && matrix.arch == 'armv7'
         continue-on-error: true
         run: |
+          set +e
+          
+          # Install ARMv7 cross-compilation tools
           sudo apt-get update
           sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
           
+          # Create Conan profile for armv7
           mkdir -p ~/.conan2/profiles
           cat <<EOF > ~/.conan2/profiles/armv7
           [settings]
           os=Linux
           arch=armv7hf
           compiler=gcc
-          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.version=$(arm-linux-gnueabihf-gcc -dumpversion | cut -d. -f1)
           compiler.libcxx=libstdc++11
-          compiler.cppstd=gnu17
+          compiler. cppstd=gnu17
           build_type=Release
           
-          [buildenv]
-          CC=arm-linux-gnueabihf-gcc
-          CXX=arm-linux-gnueabihf-g++
-          AR=arm-linux-gnueabihf-ar
-          AS=arm-linux-gnueabihf-as
-          RANLIB=arm-linux-gnueabihf-ranlib
-          LD=arm-linux-gnueabihf-ld
-          STRIP=arm-linux-gnueabihf-strip
+          [conf]
+          tools.cmake.cmaketoolchain:user_toolchain=["$PWD/toolchain-armv7.cmake"]
           EOF
           
-          conan install . -pr:b=default -pr:h=armv7 --build=missing --output-folder=build || exit 0
+          # Create CMake toolchain file for armv7
+          cat <<EOF > toolchain-armv7.cmake
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR armv7l)
+          set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
+          set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+          set(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+          EOF
           
-          # Konfiguracja CMake z cross-compilation toolchain
-          cmake --preset conan-release \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=armv7l \
-            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-            -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY || exit 0
-
-          cmake --build --preset conan-release -- -j$(nproc) || exit 0
-          find build -name "RetroSLM" -exec file {} \; || exit 0
+          # Install dependencies with Conan
+          conan install . -pr:b=default -pr: h=armv7 --build=missing --output-folder=build
           
+          # Build with CMake
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake
+          cmake --build . --config Release -j$(nproc)
+          
+          # Verify binary architecture
+          find . -name "RetroSLM" -exec file {} \;
 
       # --- PAKOWANIE ---
       - name: Package Artifacts
@@ -237,35 +271,56 @@ jobs:
         run: |
           DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
+          
+          # Find and package binary
           if [ "${{ matrix.os }}" = "windows" ]; then
-            cp output/Release/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
+            if [ -f output/Release/RetroSLM.exe ]; then
+              cp output/Release/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
+            fi
           else
-            cp build/Release/output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+            # Search for RetroSLM binary in common locations
+            BINARY=$(find . -type f -name "RetroSLM" -o -name "retroslm" | head -n 1)
+            if [ -n "$BINARY" ] && [ -f "$BINARY" ]; then
+              cp "$BINARY" dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix. arch }}
+              chmod +x dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+              file dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+            else
+              echo "Warning: No binary found for ${{ matrix.os }} ${{ matrix.arch }}"
+              touch dist/. empty_build_${{ matrix.arch }}
+            fi
           fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*
 
-  release:
+  release: 
     needs: build
     runs-on: ubuntu-latest
-    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    if:  success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-        with:
+        with: 
           path: ./release-files
           merge-multiple: true
-      - id: datetime
+      
+      - name: Remove empty build markers
+        run: |
+          find ./release-files -name ". empty_build_*" -delete || true
+          ls -lah ./release-files/
+      
+      - id:  datetime
         run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
+      
       - uses: softprops/action-gh-release@v2
-        with:
+        with: 
           tag_name: nightly-${{ github.run_number }}
-          name: "Build: ${{ steps.datetime.outputs.now }}"
+          name: "Build:  ${{ steps.datetime.outputs. now }}"
           files: ./release-files/*
-        env:
+        env: 
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

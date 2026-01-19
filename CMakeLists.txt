@@ -11,11 +11,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(ftxui_DIR "${CMAKE_SOURCE_DIR}/ftxui/install/lib/cmake/ftxui")
 
 
-add_compile_options(-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE)
-
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-finput-charset=UTF-8 -fexec-charset=UTF-8)
+    
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(-fwide-exec-charset=UTF-16LE)
+    endif()
+
+elseif (MSVC)
+    add_compile_options(/source-charset:utf-8 /execution-charset:utf-8)
 endif()
+
 
 
 

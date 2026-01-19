@@ -150,7 +150,7 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ]; then
             cp output/Release/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
           else
-            cp output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
+            cp build/Release/output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
           fi
 
       - name: Upload Artifacts

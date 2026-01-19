@@ -139,7 +139,7 @@ jobs:
           # Install 32-bit cross-compilation tools
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+          sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386 make
           
           # Create Conan default profile
           mkdir -p ~/.conan2/profiles
@@ -155,36 +155,42 @@ jobs:
           compiler.libcxx=libstdc++11
           compiler.cppstd=gnu17
           build_type=Release
-          EOF
           
-          # Create CMake toolchain file for i386
-          cat <<'TOOLCHAIN' > toolchain-i386.cmake
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR i686)
-          set(CMAKE_C_COMPILER gcc)
-          set(CMAKE_CXX_COMPILER g++)
-          set(CMAKE_C_FLAGS_INIT "-m32")
-          set(CMAKE_CXX_FLAGS_INIT "-m32")
-          set(CMAKE_EXE_LINKER_FLAGS_INIT "-m32")
-          set(CMAKE_SHARED_LINKER_FLAGS_INIT "-m32")
-          TOOLCHAIN
+          [conf]
+          tools. build:cflags=["-m32"]
+          tools.build:cxxflags=["-m32"]
+          tools.build:ldflags=["-m32"]
+          EOF
           
           # Install dependencies with Conan
           conan install . -pr:b=default -pr:h=i386 --build=missing --output-folder=build-i386
           
-          # Build with CMake
-          cmake -S .  -B build-i386/Release \
+          # Debug:  Show where conan_toolchain.cmake is
+          echo "=== Looking for conan_toolchain.cmake ==="
+          find build-i386 -name "conan_toolchain.cmake" -type f
+          
+          TOOLCHAIN_FILE=$(find build-i386 -name "conan_toolchain.cmake" -type f | head -n 1)
+          
+          if [ -z "$TOOLCHAIN_FILE" ]; then
+            echo "Error:  conan_toolchain.cmake not found!"
+            exit 1
+          fi
+          
+          echo "Using toolchain: $TOOLCHAIN_FILE"
+          
+          # Build with CMake using Conan toolchain
+          cmake -S . -B build-i386/cmake-build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$(pwd)/build-i386/conan_toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
             -DCMAKE_C_FLAGS="-m32" \
             -DCMAKE_CXX_FLAGS="-m32" \
             -DCMAKE_EXE_LINKER_FLAGS="-m32"
           
-          cmake --build build-i386/Release --config Release -j$(nproc)
+          cmake --build build-i386/cmake-build --config Release -j$(nproc)
           
           # Verify binary architecture
           echo "=== Verifying i386 build ==="
-          find build-i386 -name "RetroSLM" -exec file {} \;
+          find build-i386 -name "RetroSLM" -type f -exec file {} \;
 
       # --- LINUX ARMv7 ---
       - name: Build Linux ARMv7

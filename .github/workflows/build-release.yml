@@ -21,7 +21,7 @@ jobs:
             arch: x86
             runner: windows-latest
           
-          # macOS - Wszystko na macos-15
+          # macOS
           - os: macos
             arch: armv8
             runner: macos-15
@@ -57,15 +57,15 @@ jobs:
           pip install conan
           conan profile detect --force
 
-      # --- KOMPILACJA WINDOWS ---
+      # --- KOMPILACJA WINDOWS (Użycie Twojego skryptu) ---
       - name: Build Windows
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} -s compiler.cppstd=17 --build=missing --output-folder=conan_out
-          for /r conan_out %%i in (conan_toolchain.cmake) do set "TOOLCHAIN=%%i"
-          cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE="%TOOLCHAIN%"
-          cmake --build build --config Release
+          :: Ustawiamy standard C++17 w domyślnym profilu przed uruchomieniem skryptu
+          conan profile build --f "settings.compiler.cppstd=17" default
+          conan profile build --f "settings.arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}" default
+          call build-conan.cmd
 
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
@@ -92,7 +92,7 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           distro: ${{ matrix.arch == 'i386' && 'none' || 'ubuntu22.04' }}
-          baseImage: ${{ matrix.arch == 'i386' && 'i386/ubuntu:bionic' || '' }}
+          base_image: ${{ matrix.arch == 'i386' && 'i386/ubuntu:bionic' || '' }}
           githubToken: ${{ github.token }}
           install: |
             apt-get update
@@ -113,10 +113,12 @@ jobs:
           mkdir -p dist
           if [ "${{ matrix.os }}" = "windows" ]; then
             TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
-            cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}
+            # Skrypt build-conan.cmd wrzuca pliki do folderu output/
+            cp output/RetroSLM.exe dist/${TARGET_NAME} || cp build/Release/RetroSLM.exe dist/${TARGET_NAME}
           else
             TARGET_NAME="RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}"
-            cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}
+            # Sprawdzamy folder output (ze skryptów) oraz build (z cmake)
+            cp output/RetroSLM dist/${TARGET_NAME} || cp build/RetroSLM dist/${TARGET_NAME}
           fi
 
       - name: Upload Artifacts

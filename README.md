@@ -4,6 +4,9 @@ System zarządzania magazynem, klientami, fakturami i historią operacji z inter
 
 > [!CAUTION]
 > Program do poprawnego działania wymaga, przynajmniej pustego folderu BazaDanych
+
+> [!WARNING]
+> Program jest dalej w trakcie tworzenia, aktualnie dostępna jest tylko wersja rozwojowa
 ## Informacje 
 - Projekt stworzony w ramach zaliczenia na studia
 - Współtworzony w ramach transmisji na żywo na kanale [YouTube](https://youtube.com/@klubuntu)

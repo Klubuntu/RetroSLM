@@ -13,23 +13,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
           - os: windows
             arch: x64
             runner: windows-latest
           - os: windows
             arch: x86
             runner: windows-latest
-          
-          # macOS - Używamy macos-15 dla Apple Silicon i macos-13 dla Intela
           - os: macos
             arch: arm64
             runner: macos-15
           - os: macos
             arch: x86_64
-            runner: macos-13 # macos-14/15 to tylko ARM, Intel wymaga macos-13
-
-          # Linux - Poprawione nazwy dla uraimo/run-on-arch-action
+            runner: macos-15
           - os: linux
             arch: x86_64
             runner: ubuntu-latest
@@ -62,16 +57,15 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} --build=missing --output-folder=build
+          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} -s compiler.cppstd=17 --build=missing --output-folder=build
           cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
           cmake --build build --config Release
 
-          
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          conan install . -s arch=${{ matrix.arch }} --build=missing --output-folder=build
+          conan install . -s arch=${{ matrix.arch }} -s compiler.cppstd=17 --build=missing --output-folder=build
           cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
@@ -79,7 +73,7 @@ jobs:
       - name: Build Linux Standard
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         run: |
-          conan install . --build=missing --output-folder=build
+          conan install . -s compiler.cppstd=17 --build=missing --output-folder=build
           cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
@@ -97,11 +91,11 @@ jobs:
             pip3 install conan
           run: |
             conan profile detect --force
-            conan install . --build=missing --output-folder=build
+            conan install . -s compiler.cppstd=17 --build=missing --output-folder=build
             cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
             cmake --build build
 
-      # --- PAKOWANIE Z DATĄ ---
+      # --- PAKOWANIE ---
       - name: Package Artifacts
         shell: bash
         run: |
@@ -109,10 +103,10 @@ jobs:
           mkdir -p dist
           if [ "${{ matrix.os }}" = "windows" ]; then
             TARGET_NAME="RetroSLM_${DATE}_win_${{ matrix.arch }}.exe"
-            [span_3](start_span)cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}[span_3](end_span)
+            cp build/Release/RetroSLM.exe dist/${TARGET_NAME} || cp output/RetroSLM.exe dist/${TARGET_NAME}
           else
             TARGET_NAME="RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}"
-            [span_4](start_span)cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}[span_4](end_span)
+            cp build/RetroSLM dist/${TARGET_NAME} || cp output/RetroSLM dist/${TARGET_NAME}
           fi
 
       - name: Upload Artifacts
@@ -143,8 +137,9 @@ jobs:
         with:
           tag_name: nightly-${{ github.run_number }}
           name: "Build: ${{ steps.datetime.outputs.now }}"
-          body: "Automatyczny build RetroSLM dla wszystkich wspieranych platform."
+          body: "Automatyczny build RetroSLM."
           prerelease: true
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          

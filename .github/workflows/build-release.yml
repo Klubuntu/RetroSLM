@@ -13,14 +13,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows, arch: x64, runner: windows-latest
-          - os: windows, arch: x86, runner: windows-latest
-          - os: macos, arch: armv8, runner: macos-15
-          - os: macos, arch: x86_64, runner: macos-15
-          - os: linux, arch: x86_64, runner: ubuntu-latest
-          - os: linux, arch: i386, runner: ubuntu-latest
-          - os: linux, arch: aarch64, runner: ubuntu-latest
-          - os: linux, arch: armv7, runner: ubuntu-latest
+          - os: windows
+            arch: x64
+            runner: windows-latest
+          - os: windows
+            arch: x86
+            runner: windows-latest
+          - os: macos
+            arch: armv8
+            runner: macos-15
+          - os: macos
+            arch: x86_64
+            runner: macos-15
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: linux
+            arch: i386
+            runner: ubuntu-latest
+          - os: linux
+            arch: aarch64
+            runner: ubuntu-latest
+          - os: linux
+            arch: armv7
+            runner: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -39,18 +55,18 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          if not exist %USERPROFILE%\.conan2\profiles mkdir %USERPROFILE%\.conan2\profiles
+          if not exist "%USERPROFILE%\.conan2\profiles" mkdir "%USERPROFILE%\.conan2\profiles"
           (
           echo [settings]
+          echo os=Windows
           echo arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }}
-          echo build_type=Release
           echo compiler=msvc
+          echo compiler.version=193
           echo compiler.cppstd=17
           echo compiler.runtime=dynamic
           echo compiler.runtime_type=Release
-          echo compiler.version=193
-          echo os=Windows
-          ) > %USERPROFILE%\.conan2\profiles\default
+          echo build_type=Release
+          ) > "%USERPROFILE%\.conan2\profiles\default"
           call build-conan.cmd
 
       # --- MACOS ---
@@ -60,13 +76,13 @@ jobs:
           mkdir -p ~/.conan2/profiles
           cat <<EOF > ~/.conan2/profiles/default
           [settings]
-          arch=${{ matrix.arch }}
-          build_type=Release
-          compiler=apple-clang
-          compiler.cppstd=gnu17
-          compiler.libcxx=libc++
-          compiler.version=15
           os=Macos
+          arch=${{ matrix.arch }}
+          compiler=apple-clang
+          compiler.version=15
+          compiler.libcxx=libc++
+          compiler.cppstd=gnu17
+          build_type=Release
           EOF
           chmod +x build-conan.sh
           ./build-conan.sh
@@ -78,18 +94,18 @@ jobs:
           mkdir -p ~/.conan2/profiles
           cat <<EOF > ~/.conan2/profiles/default
           [settings]
-          arch=x86_64
-          build_type=Release
-          compiler=gcc
-          compiler.cppstd=gnu17
-          compiler.libcxx=libstdc++11
-          compiler.version=11
           os=Linux
+          arch=x86_64
+          compiler=gcc
+          compiler.version=11
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
           EOF
           chmod +x build-conan.sh
           ./build-conan.sh
 
-      # --- LINUX CROSS-ARCH (ARM, i386) ---
+      # --- LINUX CROSS-ARCH (i386, ARM) ---
       - name: Build Linux Cross-Arch
         if: matrix.os == 'linux' && matrix.arch != 'x86_64'
         uses: uraimo/run-on-arch-action@v2
@@ -106,20 +122,21 @@ jobs:
             mkdir -p /root/.conan2/profiles
             cat <<EOF > /root/.conan2/profiles/default
             [settings]
-            arch=${{ matrix.arch == 'aarch64' && 'armv8' || (matrix.arch == 'armv7' && 'armv7' || 'x86') }}
-            build_type=Release
-            compiler=gcc
-            compiler.cppstd=gnu17
-            compiler.libcxx=libstdc++11
-            compiler.version=11
             os=Linux
+            arch=${{ matrix.arch == 'aarch64' && 'armv8' || (matrix.arch == 'armv7' && 'armv7' || 'x86') }}
+            compiler=gcc
+            compiler.version=11
+            compiler.libcxx=libstdc++11
+            compiler.cppstd=gnu17
+            build_type=Release
             EOF
             chmod +x build-conan.sh
+            # Zapobieganie Segfaultom:
             sed -i 's/cmake --build ./cmake --build . -- -j2/g' build-conan.sh
             ./build-conan.sh
 
-      # --- ARTEFAKTY ---
-      - name: Package & Upload
+      # --- PAKOWANIE ---
+      - name: Package Artifacts
         shell: bash
         run: |
           DATE=$(date +'%Y.%m.%d')
@@ -129,8 +146,8 @@ jobs:
           else
             cp output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
           fi
-      
-      - name: Upload
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: RetroSLM-${{ matrix.os }}-${{ matrix.arch }}
@@ -140,16 +157,19 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
-    permissions: { contents: write }
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
-        with: { path: ./release-files, merge-multiple: true }
-      - id: dt
+        with:
+          path: ./release-files
+          merge-multiple: true
+      - id: datetime
         run: echo "now=$(date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly-${{ github.run_number }}
-          name: "Build: ${{ steps.dt.outputs.now }}"
+          name: "Build: ${{ steps.datetime.outputs.now }}"
           files: ./release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

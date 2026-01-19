@@ -13,18 +13,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Windows
           - os: windows
             arch: x64
             runner: windows-latest
           - os: windows
             arch: x86
             runner: windows-latest
+          
+          # macOS - Wszystko na macos-15
           - os: macos
-            arch: arm64
+            arch: armv8
             runner: macos-15
           - os: macos
             arch: x86_64
             runner: macos-15
+
+          # Linux
           - os: linux
             arch: x86_64
             runner: ubuntu-latest
@@ -57,43 +62,48 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} -s compiler.cppstd=17 --build=missing --output-folder=build
-          cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+          conan install . -s arch=${{ matrix.arch == 'x64' && 'x86_64' || 'x86' }} -s compiler.cppstd=17 --build=missing --output-folder=conan_out
+          for /r conan_out %%i in (conan_toolchain.cmake) do set "TOOLCHAIN=%%i"
+          cmake -B build -S . -G "Visual Studio 17 2022" -A ${{ matrix.arch == 'x64' && 'x64' || 'Win32' }} -DCMAKE_TOOLCHAIN_FILE="%TOOLCHAIN%"
           cmake --build build --config Release
 
       # --- KOMPILACJA MACOS ---
       - name: Build macOS
         if: matrix.os == 'macos'
         run: |
-          conan install . -s arch=${{ matrix.arch }} -s compiler.cppstd=17 --build=missing --output-folder=build
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+          conan install . -s arch=${{ matrix.arch }} -s compiler.cppstd=17 --build=missing --output-folder=conan_out
+          TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
       # --- KOMPILACJA LINUX (x86_64) ---
       - name: Build Linux Standard
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         run: |
-          conan install . -s compiler.cppstd=17 --build=missing --output-folder=build
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+          conan install . -s compiler.cppstd=17 --build=missing --output-folder=conan_out
+          TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      # --- KOMPILACJA LINUX (Pozostałe architektury) ---
+      # --- KOMPILACJA LINUX (i386, ARM) ---
       - name: Build Linux Cross-Arch
         if: matrix.os == 'linux' && matrix.arch != 'x86_64'
         uses: uraimo/run-on-arch-action@v2
         with:
           arch: ${{ matrix.arch }}
-          distro: ubuntu22.04
+          distro: ${{ matrix.arch == 'i386' && 'none' || 'ubuntu22.04' }}
+          baseImage: ${{ matrix.arch == 'i386' && 'i386/ubuntu:bionic' || '' }}
           githubToken: ${{ github.token }}
           install: |
             apt-get update
-            apt-get install -y build-essential cmake python3-pip
+            apt-get install -y build-essential cmake python3-pip make g++
             pip3 install conan
           run: |
             conan profile detect --force
-            conan install . -s compiler.cppstd=17 --build=missing --output-folder=build
-            cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
-            cmake --build build
+            conan install . -s compiler.cppstd=17 --build=missing --output-folder=conan_out
+            TOOLCHAIN=$(find conan_out -name conan_toolchain.cmake)
+            cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
+            cmake --build build -- -j2
 
       # --- PAKOWANIE ---
       - name: Package Artifacts

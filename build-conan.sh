@@ -22,6 +22,6 @@ cmake --preset conan-release \
 
 echo "=== Buduje projekt ==="
 cd build
-cmake --build .
+cmake --build --preset conan-release
 
 echo "=== Zakończono budowę sukcesem ==="

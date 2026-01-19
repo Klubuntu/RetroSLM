@@ -23,7 +23,7 @@ System zarządzania magazynem, klientami, fakturami i historią operacji z inter
 Program oferuje 5 motywów:
 1. **Klasyczny** (granatowo-czarny) - domyślny motyw w stylu MS-DOS
 2. **Zielony** (zielono-czarny) - styl terminala matrix
-3. **Czerwony** (czerwono-czarny) - taki alarmowy
+3. **Czerwony** (czerwono-czarny) - aż, razi swoją jasnością
 4. **Niebieski** (niebiesko-czarny) - spokojny
 5. **Purpurowy** (fioletowo-czarny) - nowoczesny
 

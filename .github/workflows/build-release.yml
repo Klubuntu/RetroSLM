@@ -148,7 +148,7 @@ jobs:
           DATE=$(date +'%Y.%m.%d')
           mkdir -p dist
           if [ "${{ matrix.os }}" = "windows" ]; then
-            cp output/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
+            cp output/Release/RetroSLM.exe dist/RetroSLM_${DATE}_win_${{ matrix.arch }}.exe
           else
             cp output/RetroSLM dist/RetroSLM_${DATE}_${{ matrix.os }}_${{ matrix.arch }}
           fi

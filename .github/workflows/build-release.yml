@@ -128,8 +128,7 @@ jobs:
           compiler.cppstd=gnu17
           build_type=Release
           EOF
-
-          Instalacja zależności przez Conan z użyciem nowego profilu
+          
           conan install . -pr:b=default -pr:h=x86 --build=missing --output-folder=build
 
           Konfiguracja CMake z wymuszeniem flagi -m32
@@ -140,6 +139,96 @@ jobs:
 
           cmake --build --preset conan-release -- -j$(nproc)
           find build -name "RetroSLM" -exec file {} \;
+
+      # --- LINUX ARM64 (aarch64) CROSS-COMPILE ---
+      - name: Build Linux ARM64 (aarch64)
+        if: matrix.os == 'linux' && matrix.arch == 'aarch64'
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/aarch64
+          [settings]
+          os=Linux
+          arch=armv8
+          compiler=gcc
+          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
+          
+          [buildenv]
+          CC=aarch64-linux-gnu-gcc
+          CXX=aarch64-linux-gnu-g++
+          AR=aarch64-linux-gnu-ar
+          AS=aarch64-linux-gnu-as
+          RANLIB=aarch64-linux-gnu-ranlib
+          LD=aarch64-linux-gnu-ld
+          STRIP=aarch64-linux-gnu-strip
+          EOF
+          
+          conan install . -pr:b=default -pr:h=aarch64 --build=missing --output-folder=build || exit 0
+          
+          # Konfiguracja CMake z cross-compilation toolchain
+          cmake --preset conan-release \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY || exit 0
+
+          cmake --build --preset conan-release -- -j$(nproc) || exit 0
+          find build -name "RetroSLM" -exec file {} \; || exit 0
+
+      # --- LINUX ARMv7 CROSS-COMPILE ---
+      - name: Build Linux ARMv7
+        if: matrix.os == 'linux' && matrix.arch == 'armv7'
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          
+          mkdir -p ~/.conan2/profiles
+          cat <<EOF > ~/.conan2/profiles/armv7
+          [settings]
+          os=Linux
+          arch=armv7hf
+          compiler=gcc
+          compiler.version=$(gcc -dumpversion | cut -d. -f1)
+          compiler.libcxx=libstdc++11
+          compiler.cppstd=gnu17
+          build_type=Release
+          
+          [buildenv]
+          CC=arm-linux-gnueabihf-gcc
+          CXX=arm-linux-gnueabihf-g++
+          AR=arm-linux-gnueabihf-ar
+          AS=arm-linux-gnueabihf-as
+          RANLIB=arm-linux-gnueabihf-ranlib
+          LD=arm-linux-gnueabihf-ld
+          STRIP=arm-linux-gnueabihf-strip
+          EOF
+          
+          conan install . -pr:b=default -pr:h=armv7 --build=missing --output-folder=build || exit 0
+          
+          # Konfiguracja CMake z cross-compilation toolchain
+          cmake --preset conan-release \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=armv7l \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+            -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY || exit 0
+
+          cmake --build --preset conan-release -- -j$(nproc) || exit 0
+          find build -name "RetroSLM" -exec file {} \; || exit 0
           
 
       # --- PAKOWANIE ---

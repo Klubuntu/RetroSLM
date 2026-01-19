@@ -1,6 +1,8 @@
 # RetroSLM - System Zarządzania w Stylu MS-DOS
 
 System zarządzania magazynem, klientami, fakturami i historią operacji z interfejsem retro inspirowanym MS-DOS Editor.
+> [!CAUTION]
+> Program do poprawnego działania wymaga, chociaż pustego folderu BazaDanych
 
 ## Sterowanie
 
